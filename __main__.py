@@ -8,6 +8,7 @@ import arcade
 import random
 import os
 from pyglet.math import Vec2
+from stats import GameStats
 
 file_path = os.path.dirname(os.path.abspath(__file__))
 os.chdir(file_path)
@@ -90,7 +91,7 @@ class GameView(arcade.View):
     def __init__(self):
         super().__init__()
 
-        self.time_taken = 0
+        self.stats = GameStats()
         self.last_mouse_location = self.mouse_location = Vec2(0, 0)
 
         # Sprite lists
@@ -100,7 +101,6 @@ class GameView(arcade.View):
 
 
         # Set up the player
-        self.score = 0
         self.player_sprite = Player(":resources:images/space_shooter/playerShip1_Orange.png", SPRITE_SCALING, mass=100)
         self.player_sprite.center_x = 50
         self.player_sprite.center_y = 50
@@ -191,10 +191,10 @@ class GameView(arcade.View):
         self.camera_gui.use()
 
         # Draw the GUI
-        output = f"Score: {self.score}"
+        output = f"Score: {self.stats.score}"
+        arcade.draw_text(output, 10, 10, arcade.color.WHITE, 14)
+        output = f"Moves: {self.stats.moves}"
         arcade.draw_text(output, 10, 30, arcade.color.WHITE, 14)
-        output_total = f"Total Score: {self.window.total_score}"
-        arcade.draw_text(output_total, 10, 10, arcade.color.WHITE, 14)
 
         # draw mouse drag speed vector
         if self.mouse_pressed:
@@ -209,7 +209,7 @@ class GameView(arcade.View):
 
 
     def on_update(self, delta_time):
-        self.time_taken += delta_time
+        self.stats.time_taken += delta_time
 
         # if self.up_pressed and not self.down_pressed:
         #     self.player_sprite.change_y = PLAYER_MOVEMENT_SPEED
@@ -227,14 +227,14 @@ class GameView(arcade.View):
         # score.
         for coin in hit_list:
             coin.kill()
-            self.score += 1
+            self.stats.score += 1
             self.window.total_score += 1
 
         # If we've collected all the games, then move to a "GAME_OVER"
         # state.
         if len(self.coin_list) == 0:
             game_over_view = GameOverView()
-            game_over_view.time_taken = self.time_taken
+            game_over_view.stats = self.stats
             self.window.set_mouse_visible(True)
             self.window.show_view(game_over_view)
 
@@ -286,11 +286,13 @@ class GameView(arcade.View):
             self.last_mouse_location = Vec2(x, y)
 
     def on_mouse_release(self, x, y, button, key_modifiers):
-        self.mouse_pressed = False
-        speed_vector = Vec2(self.mouse_x - self.last_mouse_x, self.mouse_y - self.last_mouse_y)
-        # delta_v = speed_vector.mag
-        # heading = math.degrees(speed_vector.heading)
-        self.player_sprite.change_speed_vector += speed_vector.scale(PLAYER_MOVEMENT_SPEED)
+        if self.mouse_pressed:
+            speed_vector = Vec2(self.mouse_x - self.last_mouse_x, self.mouse_y - self.last_mouse_y)
+            # delta_v = speed_vector.mag
+            # heading = math.degrees(speed_vector.heading)
+            self.player_sprite.change_speed_vector += speed_vector.scale(PLAYER_MOVEMENT_SPEED)
+            self.stats.moves += 1
+            self.mouse_pressed = False
 
     def scroll_to_player(self):
         """
@@ -315,7 +317,7 @@ class GameView(arcade.View):
 class GameOverView(arcade.View):
     def __init__(self):
         super().__init__()
-        self.time_taken = 0
+        self.stats = GameStats()
 
     def on_show_view(self):
         arcade.set_background_color(arcade.color.BLACK)
@@ -328,7 +330,7 @@ class GameOverView(arcade.View):
         arcade.draw_text("Game Over", self.window.width / 2, self.window.height / 2, arcade.color.WHITE, 54, anchor_x="center")
         arcade.draw_text("Click to restart", self.window.width / 2, self.window.height / 2 - 100, arcade.color.WHITE, 24, anchor_x="center")
 
-        time_taken_formatted = f"{round(self.time_taken, 2)} seconds"
+        time_taken_formatted = f"{round(self.stats.time_taken, 2)} seconds"
         arcade.draw_text(f"Time taken: {time_taken_formatted}",
                          self.window.width / 2,
                          self.window.height / 2 - 200,
@@ -336,8 +338,10 @@ class GameOverView(arcade.View):
                          font_size=15,
                          anchor_x="center")
 
-        output_total = f"Total Score: {self.window.total_score}"
+        output_total = f"Score: {self.stats.score}"
         arcade.draw_text(output_total, 10, 10, arcade.color.WHITE, 14)
+        output_total = f"Moves: {self.stats.moves}"
+        arcade.draw_text(output_total, 10, 30, arcade.color.WHITE, 14)
 
     def on_mouse_press(self, _x, _y, _button, _modifiers):
         game_view = GameView()
