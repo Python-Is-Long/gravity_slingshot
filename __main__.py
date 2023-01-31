@@ -10,19 +10,22 @@ import os
 from pyglet.math import Vec2
 from typing import Tuple, List, Dict, Union, Any, Optional
 from stats import GameStats
+from utils import clip
 
 file_path = os.path.dirname(os.path.abspath(__file__))
 os.chdir(file_path)
 SCREEN_WIDTH, SCREEN_HEIGHT = pyautogui.size()
-MAP_WIDTH, MAP_HEIGHT = (2500,2500)
+MAP_WIDTH, MAP_HEIGHT = (2500, 2500)
 SPRITE_SCALING = 0.5
 # How fast the camera pans to the player. 1.0 is instant.
 CAMERA_SPEED = 0.1
 # How fast the character moves
-PLAYER_MOVEMENT_SPEED = 0.01
-PLANET_SCALE = 500
-PLANET_DENSITY = 100000
-G=1e-7
+PLAYER_SPEED = 0.01
+PLANET_NUMBER = 3
+PLANET_SCALE = 300
+PLANET_SPEED = 3
+PLANET_DENSITY = 10000
+G=1e-8
 
 
 class MassSprite(arcade.Sprite):
@@ -121,9 +124,9 @@ class MenuView(arcade.View):
 
     def on_draw(self):
         self.clear()
-        arcade.draw_text("Menu Screen", self.window.width / 2, self.window.height / 2,
+        arcade.draw_text("Gravity Slingshot", self.window.width / 2, self.window.height / 2,
                          arcade.color.BLACK, font_size=50, anchor_x="center")
-        arcade.draw_text("Click to advance", self.window.width / 2, self.window.height / 2 - 75,
+        arcade.draw_text("Click to play", self.window.width / 2, self.window.height / 2 - 75,
                          arcade.color.GRAY, font_size=20, anchor_x="center")
 
     def on_mouse_press(self, _x, _y, _button, _modifiers):
@@ -167,27 +170,29 @@ class GameView(arcade.View):
             self.coin_list.append(coin)
 
 
-        # -- Set up several columns of walls
-        for x in range(200, 1650, 210):
-            for y in range(0, 1600, 64):
-                # Randomly skip a box so the player can find a way through
-                if random.randrange(100) < 2:
-                    radius = PLANET_SCALE * random.uniform(1, 3)
-                    mass = PLANET_DENSITY*radius**2
-                    planet = Planet(
-                        radius=int(PLANET_SCALE),
-                        color1=(255, 255, 255, 127),
-                        color2=(127, 127, 127, 127),
-                        mass=mass,
-                    )
-                    planet.speed_vector = Vec2(random.normalvariate(0,3), random.normalvariate(0,3))
-                    planet.center_x = x
-                    planet.center_y = y
-                    self.planet_list.append(planet)
+        # -- Set up planets
+        map_center = Vec2(random.normalvariate(MAP_WIDTH/2, MAP_WIDTH/2), random.normalvariate(MAP_HEIGHT/2, MAP_HEIGHT/2))
+        map_diagonal = Vec2(MAP_WIDTH, MAP_HEIGHT).mag
+        for i in range(PLANET_NUMBER):
+            distance = random.uniform(0, map_diagonal/2)
+            angle = random.uniform(0,360)
+            x, y = map_center.from_polar(distance, math.radians(angle))
+            radius = PLANET_SCALE * random.uniform(1, 3)
+            mass = PLANET_DENSITY*0.75*math.pi*radius**3
+            planet = Planet(
+                radius=int(radius),
+                color1=(255, 255, 255, 127),
+                color2=(127, 127, 127, 127),
+                mass=mass,
+            )
+            planet.speed_vector = Vec2(random.normalvariate(0,3), random.normalvariate(0,3)).from_heading(math.radians(angle+90)).scale(PLANET_SPEED)
+            planet.center_x = x
+            planet.center_y = y
+            self.planet_list.append(planet)
 
         self.physics_engine = arcade.PhysicsEngineSimple(self.player_sprite, self.planet_list)
         self.list_physics_engines = [arcade.PhysicsEngineSimple(planet, self.planet_list) for planet in self.planet_list]
-        self.list_physics_engines += [arcade.PhysicsEngineSimple(coin, self.planet_list) for coin in self.coin_list]
+        # self.list_physics_engines += [arcade.PhysicsEngineSimple(coin, self.planet_list) for coin in self.coin_list]
 
         # Track the current state of what key is pressed
         self.left_pressed = False
@@ -220,8 +225,20 @@ class GameView(arcade.View):
     def on_show_view(self):
         arcade.set_background_color(arcade.color.BLACK)
 
-        # Don't show the mouse cursor
-        # self.window.set_mouse_visible(False)
+    def sprite_in_viewport(self, sprite: Union[MassSprite, MassSpriteCircle]):
+        camera_x, camera_y = self.camera_sprites.position
+        camera_w, camera_h = self.camera_gui.viewport_width, self.camera_gui.viewport_height
+        print(camera_w, camera_h, sprite.center-self.player_sprite.center)
+        return (sprite.center_x-camera_w/2 < sprite.center_x-self.player_sprite.center_x < sprite.center_x+camera_w/2 and sprite.center_y-camera_h/2 < sprite.center_y-self.player_sprite.center_y < sprite.center_y+camera_h/2)
+
+    def show_sprite_beyond_viewport(self, sprite: Union[MassSprite, MassSpriteCircle]):
+        vector = sprite.center - self.player_sprite.center
+        if not self.sprite_in_viewport(sprite):
+            camera_x, camera_y = self.camera_sprites.position
+            camera_w, camera_h = self.camera_gui.viewport_width, self.camera_gui.viewport_height
+            point_x = clip(sprite.center_x-camera_x, camera_x-camera_w/2, camera_x+camera_w/2)
+            point_y = clip(sprite.center_y-camera_y, camera_y+camera_h/2, camera_y-camera_h/2)
+            arcade.draw_circle_outline(point_x, point_y, 10, arcade.color.GOLD, 1)
 
     def on_draw(self):
         self.clear()
@@ -241,6 +258,12 @@ class GameView(arcade.View):
         self.camera_gui.use()
 
         # Draw the GUI
+        # visible = 0
+        # for coin in self.coin_list:
+        #     coin: Coin
+        #     self.show_sprite_beyond_viewport(coin)
+        #     if self.sprite_in_viewport(coin): visible += 1
+        # print(f"visible: {visible}")
         output = f"Score: {self.stats.score}"
         arcade.draw_text(output, 10, 10, arcade.color.WHITE, 14)
         output = f"Moves: {self.stats.moves}"
@@ -357,7 +380,7 @@ class GameView(arcade.View):
             speed_vector = Vec2(self.mouse_x - self.last_mouse_x, self.mouse_y - self.last_mouse_y)
             # delta_v = speed_vector.mag
             # heading = math.degrees(speed_vector.heading)
-            self.player_sprite.change_speed_vector += speed_vector.scale(PLAYER_MOVEMENT_SPEED)
+            self.player_sprite.change_speed_vector += speed_vector.scale(PLAYER_SPEED)
             self.stats.moves += 1
             self.mouse_pressed = False
 
@@ -416,7 +439,7 @@ class GameOverView(arcade.View):
 
 
 def main():
-    window = arcade.Window(SCREEN_WIDTH, SCREEN_HEIGHT, "Different Views Example")
+    window = arcade.Window(SCREEN_WIDTH, SCREEN_HEIGHT, "Gravity Slingshot")
     window.set_fullscreen(True)
     window.total_score = 0
     menu_view = MenuView()
