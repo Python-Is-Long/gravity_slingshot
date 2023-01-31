@@ -19,6 +19,7 @@ SPRITE_SCALING = 0.5
 CAMERA_SPEED = 0.1
 # How fast the character moves
 PLAYER_MOVEMENT_SPEED = 0.1
+PLANET_DENSITY = 10000
 G=0.1
 
 
@@ -36,6 +37,17 @@ class MassBody(arcade.Sprite):
         self.center_x += self.speed_vector[0]
         self.center_y += self.speed_vector[1]
         self.change_speed_vector = Vec2(0, 0)
+
+    @property
+    def center(self) -> Vec2:
+        return Vec2(self.center_x, self.center_y)
+
+    def fall_towards(self, attractor):
+        attractor: MassBody
+        vector = attractor.center - self.center
+        direction = vector.normalize()
+        gravity = G*attractor.mass/vector.mag**2
+        self.change_speed_vector += direction.scale(gravity)
 
 
 class Planet(MassBody):
@@ -125,13 +137,14 @@ class GameView(arcade.View):
                 # Randomly skip a box so the player can find a way through
                 if random.randrange(100) < 5:
                     radius = random.uniform(1,3)
-                    mass = 1000*radius**2
+                    mass = PLANET_DENSITY*radius**2
                     planet = Planet(
                         image_file=f":resources:images/space_shooter/meteorGrey_big{random.randint(1,4)}.png",
                         scale=SPRITE_SCALING*3,
                         mass=mass,
                         change_angle=random.normalvariate(0,1)
                     )
+                    planet.speed_vector = Vec2(random.normalvariate(0,3), random.normalvariate(0,3))
                     planet.center_x = x
                     planet.center_y = y
                     self.planet_list.append(planet)
@@ -237,6 +250,10 @@ class GameView(arcade.View):
             game_over_view.stats = self.stats
             self.window.set_mouse_visible(True)
             self.window.show_view(game_over_view)
+
+        # gravity calculation
+        for planet in self.planet_list:
+            self.player_sprite.fall_towards(planet)
 
         # Call update on all sprites
         self.planet_list.update()
