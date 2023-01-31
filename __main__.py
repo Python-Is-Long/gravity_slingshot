@@ -19,8 +19,9 @@ SPRITE_SCALING = 0.5
 CAMERA_SPEED = 0.1
 # How fast the character moves
 PLAYER_MOVEMENT_SPEED = 0.1
-PLANET_DENSITY = 10000
-G=0.1
+PLANET_SCALE = 3
+PLANET_DENSITY = 100000
+G=0.001
 
 
 class MassBody(arcade.Sprite):
@@ -68,8 +69,8 @@ class Bullet(MassBody):
 
 
 class Coin(MassBody):
-    def __init__(self, image_file=None, scale=1.0, mass=0):
-        super().__init__(image_file=image_file, scale=scale, mass=mass)
+    def __init__(self, image_file=None, scale=1.0, mass=0, change_angle=0):
+        super().__init__(image_file=image_file, scale=scale, mass=mass, change_angle=change_angle)
 
     def draw(self):
         pass
@@ -121,9 +122,13 @@ class GameView(arcade.View):
         for i in range(5):
 
             # Create the coin instance
-            coin = Coin(":resources:images/items/star.png", SPRITE_SCALING/3)
-
-            # Position the coin
+            coin = Coin(
+                ":resources:images/items/star.png",
+                SPRITE_SCALING/3,
+                mass=10,
+                change_angle=random.normalvariate(0, 10),
+            )
+            coin.speed_vector = Vec2(random.normalvariate(0,3), random.normalvariate(0,3))
             coin.center_x = random.randrange(MAP_WIDTH)
             coin.center_y = random.randrange(MAP_HEIGHT)
 
@@ -135,14 +140,14 @@ class GameView(arcade.View):
         for x in range(200, 1650, 210):
             for y in range(0, 1600, 64):
                 # Randomly skip a box so the player can find a way through
-                if random.randrange(100) < 5:
-                    radius = random.uniform(1,3)
+                if random.randrange(100) < 2:
+                    radius = PLANET_SCALE * random.uniform(1, 3)
                     mass = PLANET_DENSITY*radius**2
                     planet = Planet(
                         image_file=f":resources:images/space_shooter/meteorGrey_big{random.randint(1,4)}.png",
-                        scale=SPRITE_SCALING*3,
+                        scale=SPRITE_SCALING*PLANET_SCALE,
                         mass=mass,
-                        change_angle=random.normalvariate(0,1)
+                        change_angle=random.normalvariate(0,1),
                     )
                     planet.speed_vector = Vec2(random.normalvariate(0,3), random.normalvariate(0,3))
                     planet.center_x = x
@@ -150,6 +155,8 @@ class GameView(arcade.View):
                     self.planet_list.append(planet)
 
         self.physics_engine = arcade.PhysicsEngineSimple(self.player_sprite, self.planet_list)
+        self.list_physics_engines = [arcade.PhysicsEngineSimple(planet, self.planet_list) for planet in self.planet_list]
+        self.list_physics_engines += [arcade.PhysicsEngineSimple(coin, self.planet_list) for coin in self.coin_list]
 
         # Track the current state of what key is pressed
         self.left_pressed = False
@@ -178,10 +185,6 @@ class GameView(arcade.View):
     @property
     def last_mouse_y(self):
         return self.last_mouse_location[1]
-
-    @staticmethod
-    def calculate_gravity_acceleration(M, r):
-        return G*M/r**2
 
     def on_show_view(self):
         arcade.set_background_color(arcade.color.BLACK)
@@ -251,16 +254,28 @@ class GameView(arcade.View):
             self.window.set_mouse_visible(True)
             self.window.show_view(game_over_view)
 
-        # gravity calculation
+        # gravity system
         for planet in self.planet_list:
-            self.player_sprite.fall_towards(planet)
+            planet: Planet
+            for player in self.player_list:
+                player: Player
+                player.fall_towards(planet)
+            for coin in self.coin_list:
+                coin: Coin
+                coin.fall_towards(planet)
+            for planet2 in self.planet_list:
+                planet2: Planet
+                if planet2 is not planet:
+                    planet2.fall_towards(planet)
 
         # Call update on all sprites
         self.planet_list.update()
-        self.player_sprite.update()
+        self.player_list.update()
         self.coin_list.update()
 
         self.physics_engine.update()
+        for engine in self.list_physics_engines:
+            engine.update()
 
         # Scroll the screen to the player
         self.scroll_to_player()
