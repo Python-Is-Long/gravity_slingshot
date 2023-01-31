@@ -8,6 +8,7 @@ import arcade
 import random
 import os
 from pyglet.math import Vec2
+from typing import Tuple, List, Dict, Union, Any, Optional
 from stats import GameStats
 
 file_path = os.path.dirname(os.path.abspath(__file__))
@@ -18,13 +19,13 @@ SPRITE_SCALING = 0.5
 # How fast the camera pans to the player. 1.0 is instant.
 CAMERA_SPEED = 0.1
 # How fast the character moves
-PLAYER_MOVEMENT_SPEED = 0.1
-PLANET_SCALE = 3
+PLAYER_MOVEMENT_SPEED = 0.01
+PLANET_SCALE = 500
 PLANET_DENSITY = 100000
-G=0.001
+G=1e-7
 
 
-class MassBody(arcade.Sprite):
+class MassSprite(arcade.Sprite):
     def __init__(self, image_file: str = None, scale: float = 1.0, mass: float = 0, change_angle: float = 0):
         super().__init__(image_file, scale)
         self.mass = mass
@@ -44,22 +45,52 @@ class MassBody(arcade.Sprite):
         return Vec2(self.center_x, self.center_y)
 
     def fall_towards(self, attractor):
-        attractor: MassBody
+        attractor: Union[MassSprite, MassSpriteCircle]
         vector = attractor.center - self.center
         direction = vector.normalize()
         gravity = G*attractor.mass/vector.mag**2
         self.change_speed_vector += direction.scale(gravity)
 
 
-class Planet(MassBody):
-    def __init__(self, image_file=None, scale=1.0, mass=0, change_angle=0):
-        super().__init__(image_file=image_file, scale=scale, mass=mass, change_angle=change_angle)
+class MassSpriteCircle(arcade.SpriteCircle):
+    def __init__(self, radius: int = 1, color=arcade.color.WHITE, soft=False, mass: float = 0):
+        super().__init__(radius, color, soft)
+        self.radius = radius
+        self.mass = mass
+        self.speed_vector = Vec2(0, 0)
+        self.change_speed_vector = Vec2(0, 0)
+
+    def update(self):
+        self.speed_vector += self.change_speed_vector
+        self.center_x += self.speed_vector[0]
+        self.center_y += self.speed_vector[1]
+        self.change_speed_vector = Vec2(0, 0)
+
+    @property
+    def center(self) -> Vec2:
+        return Vec2(self.center_x, self.center_y)
+
+    def fall_towards(self, attractor):
+        attractor: Union[MassSprite, MassSpriteCircle]
+        vector = attractor.center - self.center
+        direction = vector.normalize()
+        gravity = G * attractor.mass / vector.mag ** 2
+        self.change_speed_vector += direction.scale(gravity)
+
+
+class Planet(MassSpriteCircle):
+    def __init__(self, radius: int = 1, color1=(69, 137, 133, 127), color2=(7, 67, 88, 127), soft=False, mass=0):
+        super().__init__(radius=radius, color=color1, soft=soft, mass=mass)
+        self.color1 = color1
+        self.color2 = color2
 
     def draw(self):
-        pass
+        self.shape = arcade.create_ellipse_filled_with_colors(self.center_x, self.center_y, self.radius, self.radius,
+                                                              inside_color=self.color1, outside_color=self.color2)
+        self.shape.draw()
 
 
-class Bullet(MassBody):
+class Bullet(MassSprite):
     def __init__(self, image_file=None, scale=1.0, mass=0, player_index=0):
         super().__init__(image_file=image_file, scale=scale, mass=mass)
         self.player_index = player_index
@@ -68,7 +99,7 @@ class Bullet(MassBody):
         pass
 
 
-class Coin(MassBody):
+class Coin(MassSprite):
     def __init__(self, image_file=None, scale=1.0, mass=0, change_angle=0):
         super().__init__(image_file=image_file, scale=scale, mass=mass, change_angle=change_angle)
 
@@ -76,7 +107,7 @@ class Coin(MassBody):
         pass
 
 
-class Player(MassBody):
+class Player(MassSprite):
     def __init__(self, image_file=None, scale=1.0, mass=0):
         super().__init__(image_file=image_file, scale=scale, mass=mass)
 
@@ -144,10 +175,10 @@ class GameView(arcade.View):
                     radius = PLANET_SCALE * random.uniform(1, 3)
                     mass = PLANET_DENSITY*radius**2
                     planet = Planet(
-                        image_file=f":resources:images/space_shooter/meteorGrey_big{random.randint(1,4)}.png",
-                        scale=SPRITE_SCALING*PLANET_SCALE,
+                        radius=int(PLANET_SCALE),
+                        color1=(255, 255, 255, 127),
+                        color2=(127, 127, 127, 127),
                         mass=mass,
-                        change_angle=random.normalvariate(0,1),
                     )
                     planet.speed_vector = Vec2(random.normalvariate(0,3), random.normalvariate(0,3))
                     planet.center_x = x
@@ -201,6 +232,9 @@ class GameView(arcade.View):
         # Draw all the sprites.
         self.player_list.draw()
         self.coin_list.draw()
+        for planet in self.planet_list:
+            planet: Planet
+            planet.draw()
         self.planet_list.draw()
 
         # Select the (unscrolled) camera for our GUI
@@ -227,15 +261,6 @@ class GameView(arcade.View):
     def on_update(self, delta_time):
         self.stats.time_taken += delta_time
 
-        # if self.up_pressed and not self.down_pressed:
-        #     self.player_sprite.change_y = PLAYER_MOVEMENT_SPEED
-        # elif self.down_pressed and not self.up_pressed:
-        #     self.player_sprite.change_y = -PLAYER_MOVEMENT_SPEED
-        # if self.left_pressed and not self.right_pressed:
-        #     self.player_sprite.change_x = -PLAYER_MOVEMENT_SPEED
-        # elif self.right_pressed and not self.left_pressed:
-        #     self.player_sprite.change_x = PLAYER_MOVEMENT_SPEED
-
         # Generate a list of all sprites that collided with the player.
         hit_list = arcade.check_for_collision_with_list(self.player_sprite, self.coin_list)
 
@@ -249,10 +274,7 @@ class GameView(arcade.View):
         # If we've collected all the games, then move to a "GAME_OVER"
         # state.
         if len(self.coin_list) == 0:
-            game_over_view = GameOverView()
-            game_over_view.stats = self.stats
-            self.window.set_mouse_visible(True)
-            self.window.show_view(game_over_view)
+            self.game_over()
 
         # gravity system
         for planet in self.planet_list:
@@ -280,8 +302,21 @@ class GameView(arcade.View):
         # Scroll the screen to the player
         self.scroll_to_player()
 
+    def game_over(self):
+        game_over_view = GameOverView()
+        game_over_view.stats = self.stats
+        self.window.set_mouse_visible(True)
+        self.window.show_view(game_over_view)
+
+    def restart(self):
+        menu_view = MenuView()
+        self.window.set_mouse_visible(True)
+        self.window.show_view(menu_view)
+
     def on_key_press(self, key, modifiers):
         """Called whenever a key is pressed. """
+        if key == arcade.key.ESCAPE:
+            self.restart()
         if key in (arcade.key.UP, arcade.key.W):
             self.up_pressed = True
         elif key in (arcade.key.DOWN, arcade.key.S):
