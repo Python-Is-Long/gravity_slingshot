@@ -364,13 +364,10 @@ class GameView(arcade.View):
             # destroy planets if they are too far away
             if planet.center.distance(self.player_sprite.center) > Vec2(MAP_WIDTH, MAP_HEIGHT).mag * 5:
                 planet.kill()
-                print("killed planet")
                 if planet.type == "sun":
                     self.spawn_sun()
-                    print("spawned sun")
                 elif planet.type == "planet":
                     self.spawn_planet()
-                    print("spawned planet")
                 break
         # If we've collected all the games, then move to a "GAME_OVER"
         # state.
