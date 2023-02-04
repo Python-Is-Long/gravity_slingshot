@@ -14,7 +14,7 @@ from utils import clip
 file_path = os.path.dirname(os.path.abspath(__file__))
 os.chdir(file_path)
 
-SHOW_GRID = True
+SHOW_GRID = False
 SCREEN_WIDTH, SCREEN_HEIGHT = pyautogui.size()
 MAP_WIDTH, MAP_HEIGHT = (2500, 2500)
 SPRITE_SCALING = 0.5
@@ -23,7 +23,9 @@ CAMERA_SPEED = 0.1
 # How fast the character moves
 PLAYER_SPEED = 0.01
 PLAYER_GRAVITY = COIN_GRAVITY = 10
-COIN_SPEED = 0.1
+COIN_SPEED = 1
+COIN_COUNT = 50
+SCORE_TO_WIN = 10
 PLANET_COUNT = 8
 PLANET_SCALE = 100
 PLANET_SPEED = 0.002
@@ -160,23 +162,9 @@ class GameView(arcade.View):
         self.player_sprite.center_y = 50
         self.player_list.append(self.player_sprite)
 
-        for i in range(5):
-
-            # Create the coin instance
-            coin = Coin(
-                ":resources:images/items/star.png",
-                SPRITE_SCALING/3,
-                mass=10,
-                change_angle=random.normalvariate(0, 10),
-                gravity_scale = COIN_GRAVITY,
-            )
-            coin.speed_vector = Vec2(random.normalvariate(0,3), random.normalvariate(0,3)).scale(COIN_SPEED)
-            coin.center_x = random.randrange(MAP_WIDTH)
-            coin.center_y = random.randrange(MAP_HEIGHT)
-
-            # Add the coin to the lists
-            self.coin_list.append(coin)
-
+        # Create the coin instance
+        for i in range(COIN_COUNT):
+            self.spawn_coin(radius=random.uniform(0,MAP_WIDTH))
 
         # -- Set up planets
         map_center = Vec2(random.normalvariate(MAP_WIDTH/2, MAP_WIDTH/2), random.normalvariate(MAP_HEIGHT/2, MAP_HEIGHT/2))
@@ -245,20 +233,20 @@ class GameView(arcade.View):
     def on_show_view(self):
         arcade.set_background_color(arcade.color.BLACK)
 
-    def sprite_in_viewport(self, sprite: Union[MassSprite, MassSpriteCircle]):
-        camera_x, camera_y = self.camera_sprites.position
-        camera_w, camera_h = self.camera_gui.viewport_width, self.camera_gui.viewport_height
-        print(camera_w, camera_h, sprite.center-self.player_sprite.center)
-        return (sprite.center_x-camera_w/2 < sprite.center_x-self.player_sprite.center_x < sprite.center_x+camera_w/2 and sprite.center_y-camera_h/2 < sprite.center_y-self.player_sprite.center_y < sprite.center_y+camera_h/2)
-
-    def show_sprite_beyond_viewport(self, sprite: Union[MassSprite, MassSpriteCircle]):
-        vector = sprite.center - self.player_sprite.center
-        if not self.sprite_in_viewport(sprite):
-            camera_x, camera_y = self.camera_sprites.position
-            camera_w, camera_h = self.camera_gui.viewport_width, self.camera_gui.viewport_height
-            point_x = clip(sprite.center_x-camera_x, camera_x-camera_w/2, camera_x+camera_w/2)
-            point_y = clip(sprite.center_y-camera_y, camera_y+camera_h/2, camera_y-camera_h/2)
-            arcade.draw_circle_outline(point_x, point_y, 10, arcade.color.GOLD, 1)
+    def spawn_coin(self, radius=500):
+        coin = Coin(
+            ":resources:images/items/star.png",
+            SPRITE_SCALING / 3,
+            mass=10,
+            change_angle=random.normalvariate(0, 10),
+            gravity_scale=COIN_GRAVITY,
+        )
+        coin.speed_vector = Vec2(random.normalvariate(0, 3), random.normalvariate(0, 3)).scale(COIN_SPEED)
+        if not radius: radius = Vec2(self.window.width, self.window.height).mag
+        spawn_location = self.player_sprite.center.from_polar(random.uniform(radius, radius*2), math.radians(random.uniform(0,360)))
+        coin.center_x, coin.center_y = spawn_location
+        # Add the coin to the lists
+        self.coin_list.append(coin)
 
     def on_draw(self):
         self.clear()
@@ -285,13 +273,7 @@ class GameView(arcade.View):
 
 
         # Draw the GUI
-        # visible = 0
-        # for coin in self.coin_list:
-        #     coin: Coin
-        #     self.show_sprite_beyond_viewport(coin)
-        #     if self.sprite_in_viewport(coin): visible += 1
-        # print(f"visible: {visible}")
-        output = f"Score: {self.stats.score}"
+        output = f"Score: {self.stats.score}/{SCORE_TO_WIN}"
         arcade.draw_text(output, 10, 10, arcade.color.WHITE, 14)
         output = f"Moves: {self.stats.moves}"
         arcade.draw_text(output, 10, 30, arcade.color.WHITE, 14)
@@ -325,9 +307,18 @@ class GameView(arcade.View):
             self.stats.score += 1
             self.window.total_score += 1
 
+        for coin in self.coin_list:
+            # destroy coins in collision with planets, or too far away
+            if arcade.check_for_collision_with_list(coin, self.planet_list) or coin.center.distance(self.player_sprite.center) > Vec2(MAP_WIDTH, MAP_HEIGHT).mag:
+                coin.kill()
+
+        # replenish coins
+        if len(self.coin_list) < COIN_COUNT:
+            self.spawn_coin()
+
         # If we've collected all the games, then move to a "GAME_OVER"
         # state.
-        if len(self.coin_list) == 0:
+        if self.stats.score >= SCORE_TO_WIN:
             self.game_over()
 
         # gravity system
