@@ -287,17 +287,21 @@ class GameView(arcade.View):
         arcade.draw_text(output, 10, 10, arcade.color.WHITE, 14)
         output = f"Moves: {self.stats.moves}"
         arcade.draw_text(output, 10, 30, arcade.color.WHITE, 14)
+        output = f"Speed: {round(self.player_sprite.speed_vector.mag, 2)} m/s"
+        arcade.draw_text(output, self.window.width-170, 10, arcade.color.WHITE, 14)
+        output = f"Heading: {round(math.degrees(self.player_sprite.speed_vector.heading), 2)}"
+        arcade.draw_text(output, self.window.width-170, 30, arcade.color.WHITE, 14)
 
         # draw mouse drag speed vector
         if self.mouse_pressed:
             speed_vector = Vec2(self.mouse_x-self.last_mouse_x, self.mouse_y-self.last_mouse_y)
-            delta_v = speed_vector.mag
+            delta_v = speed_vector.mag * PLAYER_SPEED
             heading = math.degrees(speed_vector.heading)
             arcade.draw_line(start_x=self.last_mouse_x, start_y=self.last_mouse_y,
                              end_x=self.mouse_x, end_y=self.mouse_y,
                              color=arcade.color.ORANGE, line_width=min(5, math.ceil(delta_v/30)))
             arcade.draw_text(f"∆v: {round(delta_v, 2)} m/s", self.mouse_x + 20, self.mouse_y, arcade.color.WHITE, 14)
-            arcade.draw_text(f"heading: {round(heading, 2)}°", self.mouse_x + 20, self.mouse_y+20, arcade.color.WHITE, 14)
+            arcade.draw_text(f"Heading: {round(heading, 2)}°", self.mouse_x + 20, self.mouse_y+20, arcade.color.WHITE, 14)
 
 
     def on_update(self, delta_time):
@@ -397,8 +401,6 @@ class GameView(arcade.View):
     def on_mouse_release(self, x, y, button, key_modifiers):
         if self.mouse_pressed:
             speed_vector = Vec2(self.mouse_x - self.last_mouse_x, self.mouse_y - self.last_mouse_y)
-            # delta_v = speed_vector.mag
-            # heading = math.degrees(speed_vector.heading)
             self.player_sprite.change_speed_vector += speed_vector.scale(PLAYER_SPEED)
             self.stats.moves += 1
             self.mouse_pressed = False
