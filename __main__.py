@@ -19,14 +19,14 @@ SCREEN_WIDTH, SCREEN_HEIGHT = pyautogui.size()
 MAP_WIDTH, MAP_HEIGHT = (2500, 2500)
 SPRITE_SCALING = 0.5
 # How fast the camera pans to the player. 1.0 is instant.
-CAMERA_SPEED = 0.1
+CAMERA_SPEED = 1    #0.1
 # How fast the character moves
 PLAYER_SPEED = 0.01
 PLAYER_GRAVITY = COIN_GRAVITY = 10
 COIN_SPEED = 1
-COIN_COUNT = 50
+COIN_COUNT = 100
 SCORE_TO_WIN = 10
-PLANET_COUNT = 8
+PLANET_COUNT = 10
 PLANET_SCALE = 100
 PLANET_SPEED = 0.002
 PLANET_DENSITY = 1000
@@ -91,10 +91,11 @@ class MassSpriteCircle(arcade.SpriteCircle):
 
 
 class Planet(MassSpriteCircle):
-    def __init__(self, radius: int = 1, color1=(69, 137, 133, 127), color2=(7, 67, 88, 127), soft=False, mass=0):
+    def __init__(self, radius: int = 1, color1=(69, 137, 133, 127), color2=(7, 67, 88, 127), soft=False, mass=0, type="planet"):
         super().__init__(radius=radius, color=color1, soft=soft, mass=mass)
         self.color1 = color1
         self.color2 = color2
+        self.type = type
 
     def draw(self):
         self.shape = arcade.create_ellipse_filled_with_colors(self.center_x, self.center_y, self.radius, self.radius,
@@ -155,6 +156,10 @@ class GameView(arcade.View):
         self.coin_list = arcade.SpriteList()
         self.planet_list = arcade.SpriteList()
 
+        # sound
+        self.score_sound = arcade.load_sound(":resources:sounds/coin1.wav")
+        self.jump_sound = arcade.load_sound(":resources:sounds/jump4.wav")
+        self.collision_sound = arcade.load_sound(":resources:sounds/hurt2.wav")
 
         # Set up the player
         self.player_sprite = Player(":resources:images/space_shooter/playerShip1_Orange.png", SPRITE_SCALING, mass=100, gravity_scale=PLAYER_GRAVITY)
@@ -164,7 +169,7 @@ class GameView(arcade.View):
 
         # Create the coin instance
         for i in range(COIN_COUNT):
-            self.spawn_coin(radius=random.uniform(0,MAP_WIDTH))
+            self.spawn_coin(R=int(random.uniform(0, MAP_WIDTH)))
 
         # -- Set up planets
         map_center = Vec2(random.normalvariate(MAP_WIDTH/2, MAP_WIDTH/2), random.normalvariate(MAP_HEIGHT/2, MAP_HEIGHT/2))
@@ -176,12 +181,13 @@ class GameView(arcade.View):
             color1=(255, 255, 127, 255),
             color2=(255, 255, 0, 127),
             mass=sun_mass,
+            type="sun",
         )
         sun.center_x = map_center[0]
         sun.center_y = map_center[1]
         self.planet_list.append(sun)
         map_diagonal = Vec2(MAP_WIDTH, MAP_HEIGHT).mag
-        planet_spacing = map_diagonal/2/PLANET_COUNT
+        planet_spacing = map_diagonal/PLANET_COUNT
         for i in range(PLANET_COUNT):
             distance = planet_spacing*(i+1)+random.uniform(0,PLANET_SCALE)
             angle = random.uniform(0,360)
@@ -195,8 +201,7 @@ class GameView(arcade.View):
                 mass=mass,
             )
             planet.speed_vector = Vec2(x,y).from_heading(math.radians(angle+90)).scale(sun.get_orbital_velocity(distance)*PLANET_SPEED)
-            planet.center_x = x
-            planet.center_y = y
+            planet.center_x, planet.center_y = Vec2(x, y) + map_center
             self.planet_list.append(planet)
         self.physics_engine = arcade.PhysicsEngineSimple(self.player_sprite, self.planet_list)
         self.list_physics_engines = [arcade.PhysicsEngineSimple(planet, self.planet_list) for planet in self.planet_list]
@@ -233,7 +238,7 @@ class GameView(arcade.View):
     def on_show_view(self):
         arcade.set_background_color(arcade.color.BLACK)
 
-    def spawn_coin(self, radius=500):
+    def spawn_coin(self, R=500):
         coin = Coin(
             ":resources:images/items/star.png",
             SPRITE_SCALING / 3,
@@ -242,11 +247,44 @@ class GameView(arcade.View):
             gravity_scale=COIN_GRAVITY,
         )
         coin.speed_vector = Vec2(random.normalvariate(0, 3), random.normalvariate(0, 3)).scale(COIN_SPEED)
-        if not radius: radius = Vec2(self.window.width, self.window.height).mag
-        spawn_location = self.player_sprite.center.from_polar(random.uniform(radius, radius*2), math.radians(random.uniform(0,360)))
-        coin.center_x, coin.center_y = spawn_location
+        if not R: R = Vec2(self.window.width, self.window.height).mag
+        spawn_location = self.player_sprite.center.from_polar(random.uniform(R * 3, R * 4), math.radians(random.uniform(0, 360)))
+        coin.center_x, coin.center_y = spawn_location + self.player_sprite.center
         # Add the coin to the lists
         self.coin_list.append(coin)
+
+    def spawn_sun(self):
+        radius = int(PLANET_SCALE * random.uniform(4,8))
+        sun_mass = PLANET_DENSITY * 4 / 3 * math.pi * radius ** 3
+        color1 = tuple(random.randint(127, 255) for _ in range(3))
+        color2 = tuple(x if x > min(color1) else 0 for x in color1)
+        sun = Planet(
+            radius=int(PLANET_SCALE * random.uniform(4,8)),
+            color1=(*color1, 255),
+            color2=(*color2, 127),
+            mass=sun_mass,
+            type="sun",
+        )
+        sun.speed_vector = Vec2(random.normalvariate(0, 1), random.normalvariate(0, 1)).scale(PLANET_SPEED)
+        R = Vec2(self.window.width, self.window.height).mag
+        spawn_location = self.player_sprite.center.from_polar(random.uniform(R*3, R*5), math.radians(random.uniform(0,360)))
+        sun.center_x, sun.center_y = spawn_location + self.player_sprite.center
+        self.planet_list.append(sun)
+
+    def spawn_planet(self):
+        radius = PLANET_SCALE * random.uniform(1, 3)
+        mass = PLANET_DENSITY * 4 / 3 * math.pi * radius ** 3
+        planet = Planet(
+            radius=int(radius),
+            color1=(255, 255, 255, 127),
+            color2=(127, 127, 127, 127),
+            mass=mass,
+        )
+        planet.speed_vector = Vec2(random.normalvariate(0, 3), random.normalvariate(0, 3)).scale(PLANET_SPEED)
+        R = Vec2(self.window.width, self.window.height).mag
+        spawn_location = self.player_sprite.center.from_polar(random.uniform(R * 3, R * 5), math.radians(random.uniform(0, 360)))
+        planet.center_x, planet.center_y = spawn_location + self.player_sprite.center
+        self.planet_list.append(planet)
 
     def on_draw(self):
         self.clear()
@@ -297,6 +335,10 @@ class GameView(arcade.View):
     def on_update(self, delta_time):
         self.stats.time_taken += delta_time
 
+        # player collision
+        if arcade.check_for_collision_with_list(self.player_sprite, self.planet_list):
+            arcade.play_sound(self.collision_sound)
+
         # Generate a list of all sprites that collided with the player.
         hit_list = arcade.check_for_collision_with_list(self.player_sprite, self.coin_list)
 
@@ -304,18 +346,32 @@ class GameView(arcade.View):
         # score.
         for coin in hit_list:
             coin.kill()
+            arcade.play_sound(self.score_sound)
             self.stats.score += 1
             self.window.total_score += 1
 
         for coin in self.coin_list:
             # destroy coins in collision with planets, or too far away
-            if arcade.check_for_collision_with_list(coin, self.planet_list) or coin.center.distance(self.player_sprite.center) > Vec2(MAP_WIDTH, MAP_HEIGHT).mag:
+            if arcade.check_for_collision_with_list(coin, self.planet_list) or coin.center.distance(self.player_sprite.center) > Vec2(MAP_WIDTH, MAP_HEIGHT).mag * 3:
                 coin.kill()
+                break
 
         # replenish coins
         if len(self.coin_list) < COIN_COUNT:
             self.spawn_coin()
 
+        for planet in self.planet_list:
+            # destroy planets if they are too far away
+            if planet.center.distance(self.player_sprite.center) > Vec2(MAP_WIDTH, MAP_HEIGHT).mag * 5:
+                planet.kill()
+                print("killed planet")
+                if planet.type == "sun":
+                    self.spawn_sun()
+                    print("spawned sun")
+                elif planet.type == "planet":
+                    self.spawn_planet()
+                    print("spawned planet")
+                break
         # If we've collected all the games, then move to a "GAME_OVER"
         # state.
         if self.stats.score >= SCORE_TO_WIN:
@@ -399,10 +455,12 @@ class GameView(arcade.View):
 
     def on_mouse_release(self, x, y, button, key_modifiers):
         if self.mouse_pressed:
+            #jump
             speed_vector = Vec2(self.mouse_x - self.last_mouse_x, self.mouse_y - self.last_mouse_y)
             self.player_sprite.change_speed_vector += speed_vector.scale(PLAYER_SPEED)
             self.stats.moves += 1
             self.mouse_pressed = False
+            arcade.play_sound(self.jump_sound)
 
     def scroll_to_player(self):
         """
