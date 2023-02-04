@@ -21,20 +21,23 @@ SPRITE_SCALING = 0.5
 CAMERA_SPEED = 0.1
 # How fast the character moves
 PLAYER_SPEED = 0.01
-PLANET_NUMBER = 3
-PLANET_SCALE = 300
-PLANET_SPEED = 3
-PLANET_DENSITY = 10000
+PLAYER_GRAVITY = COIN_GRAVITY = 10
+COIN_SPEED = 0.1
+PLANET_COUNT = 10
+PLANET_SCALE = 100
+PLANET_SPEED = 0.002
+PLANET_DENSITY = 1000
 G=1e-8
 
 
 class MassSprite(arcade.Sprite):
-    def __init__(self, image_file: str = None, scale: float = 1.0, mass: float = 0, change_angle: float = 0):
+    def __init__(self, image_file: str = None, scale: float = 1.0, mass: float = 0, change_angle: float = 0, gravity_scale: float = 1.0):
         super().__init__(image_file, scale)
         self.mass = mass
         self.speed_vector = Vec2(0, 0)
         self.change_speed_vector = Vec2(0, 0)
         self.change_angle = change_angle
+        self.gravity_scale = gravity_scale
 
     def update(self):
         self.angle += self.change_angle
@@ -51,7 +54,7 @@ class MassSprite(arcade.Sprite):
         attractor: Union[MassSprite, MassSpriteCircle]
         vector = attractor.center - self.center
         direction = vector.normalize()
-        gravity = G*attractor.mass/vector.mag**2
+        gravity = G*attractor.mass/vector.mag**2 * self.gravity_scale
         self.change_speed_vector += direction.scale(gravity)
 
 
@@ -80,6 +83,10 @@ class MassSpriteCircle(arcade.SpriteCircle):
         gravity = G * attractor.mass / vector.mag ** 2
         self.change_speed_vector += direction.scale(gravity)
 
+    def get_orbital_velocity(self, distance: float):
+        return (G * self.mass / distance) ** 0.5
+
+
 
 class Planet(MassSpriteCircle):
     def __init__(self, radius: int = 1, color1=(69, 137, 133, 127), color2=(7, 67, 88, 127), soft=False, mass=0):
@@ -94,8 +101,8 @@ class Planet(MassSpriteCircle):
 
 
 class Bullet(MassSprite):
-    def __init__(self, image_file=None, scale=1.0, mass=0, player_index=0):
-        super().__init__(image_file=image_file, scale=scale, mass=mass)
+    def __init__(self, image_file=None, scale=1.0, mass=0, player_index=0, gravity_scale=1):
+        super().__init__(image_file=image_file, scale=scale, mass=mass, gravity_scale=gravity_scale)
         self.player_index = player_index
 
     def draw(self):
@@ -103,16 +110,16 @@ class Bullet(MassSprite):
 
 
 class Coin(MassSprite):
-    def __init__(self, image_file=None, scale=1.0, mass=0, change_angle=0):
-        super().__init__(image_file=image_file, scale=scale, mass=mass, change_angle=change_angle)
+    def __init__(self, image_file=None, scale=1.0, mass=0, change_angle=0, gravity_scale=1):
+        super().__init__(image_file=image_file, scale=scale, mass=mass, change_angle=change_angle, gravity_scale=gravity_scale)
 
     def draw(self):
         pass
 
 
 class Player(MassSprite):
-    def __init__(self, image_file=None, scale=1.0, mass=0):
-        super().__init__(image_file=image_file, scale=scale, mass=mass)
+    def __init__(self, image_file=None, scale=1.0, mass=0, gravity_scale=1):
+        super().__init__(image_file=image_file, scale=scale, mass=mass, gravity_scale=gravity_scale)
 
     def draw(self):
         pass
@@ -148,7 +155,7 @@ class GameView(arcade.View):
 
 
         # Set up the player
-        self.player_sprite = Player(":resources:images/space_shooter/playerShip1_Orange.png", SPRITE_SCALING, mass=100)
+        self.player_sprite = Player(":resources:images/space_shooter/playerShip1_Orange.png", SPRITE_SCALING, mass=100, gravity_scale=PLAYER_GRAVITY)
         self.player_sprite.center_x = 50
         self.player_sprite.center_y = 50
         self.player_list.append(self.player_sprite)
@@ -161,8 +168,9 @@ class GameView(arcade.View):
                 SPRITE_SCALING/3,
                 mass=10,
                 change_angle=random.normalvariate(0, 10),
+                gravity_scale = COIN_GRAVITY,
             )
-            coin.speed_vector = Vec2(random.normalvariate(0,3), random.normalvariate(0,3))
+            coin.speed_vector = Vec2(random.normalvariate(0,3), random.normalvariate(0,3)).scale(COIN_SPEED)
             coin.center_x = random.randrange(MAP_WIDTH)
             coin.center_y = random.randrange(MAP_HEIGHT)
 
@@ -172,24 +180,37 @@ class GameView(arcade.View):
 
         # -- Set up planets
         map_center = Vec2(random.normalvariate(MAP_WIDTH/2, MAP_WIDTH/2), random.normalvariate(MAP_HEIGHT/2, MAP_HEIGHT/2))
+        # Sun
+        radius = PLANET_SCALE * 5
+        sun_mass = PLANET_DENSITY*4/3*math.pi*radius**3
+        sun = Planet(
+            radius=PLANET_SCALE*5,
+            color1=(255, 255, 127, 255),
+            color2=(255, 255, 0, 127),
+            mass=sun_mass,
+        )
+        sun.center_x = map_center[0]
+        sun.center_y = map_center[1]
+        self.planet_list.append(sun)
         map_diagonal = Vec2(MAP_WIDTH, MAP_HEIGHT).mag
-        for i in range(PLANET_NUMBER):
-            distance = random.uniform(0, map_diagonal/2)
+        planet_spacing = 400    #map_diagonal/2/PLANET_COUNT
+        for i in range(PLANET_COUNT):
+            distance = planet_spacing*(i+1)+random.uniform(0,PLANET_SCALE)
             angle = random.uniform(0,360)
             x, y = map_center.from_polar(distance, math.radians(angle))
             radius = PLANET_SCALE * random.uniform(1, 3)
-            mass = PLANET_DENSITY*0.75*math.pi*radius**3
+            mass = PLANET_DENSITY*4/3*math.pi*radius**3
             planet = Planet(
                 radius=int(radius),
                 color1=(255, 255, 255, 127),
                 color2=(127, 127, 127, 127),
                 mass=mass,
             )
-            planet.speed_vector = Vec2(random.normalvariate(0,3), random.normalvariate(0,3)).from_heading(math.radians(angle+90)).scale(PLANET_SPEED)
+            planet.speed_vector = Vec2(x,y).from_heading(math.radians(angle+90)).scale(sun.get_orbital_velocity(distance)*PLANET_SPEED)
             planet.center_x = x
             planet.center_y = y
             self.planet_list.append(planet)
-
+            print(x,y,planet.speed_vector)
         self.physics_engine = arcade.PhysicsEngineSimple(self.player_sprite, self.planet_list)
         self.list_physics_engines = [arcade.PhysicsEngineSimple(planet, self.planet_list) for planet in self.planet_list]
         # self.list_physics_engines += [arcade.PhysicsEngineSimple(coin, self.planet_list) for coin in self.coin_list]
