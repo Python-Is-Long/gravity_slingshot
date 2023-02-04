@@ -11,9 +11,10 @@ from pyglet.math import Vec2
 from typing import Tuple, List, Dict, Union, Any, Optional
 from stats import GameStats
 from utils import clip
-
 file_path = os.path.dirname(os.path.abspath(__file__))
 os.chdir(file_path)
+
+SHOW_GRID = True
 SCREEN_WIDTH, SCREEN_HEIGHT = pyautogui.size()
 MAP_WIDTH, MAP_HEIGHT = (2500, 2500)
 SPRITE_SCALING = 0.5
@@ -261,7 +262,6 @@ class GameView(arcade.View):
 
     def on_draw(self):
         self.clear()
-
         # Select the camera we'll use to draw all our sprites
         self.camera_sprites.use()
 
@@ -273,8 +273,16 @@ class GameView(arcade.View):
             planet.draw()
         self.planet_list.draw()
 
+        #draw grid
+        if SHOW_GRID:
+            grid_mesh = (-MAP_WIDTH*2, MAP_WIDTH*2, 120)
+            for x in range(*grid_mesh):
+                arcade.draw_line(x, grid_mesh[0], x, grid_mesh[1], arcade.color.GREEN, 1)
+            for y in range(*grid_mesh):
+                arcade.draw_line(grid_mesh[0], y, grid_mesh[1], y, arcade.color.GREEN, 1)
         # Select the (unscrolled) camera for our GUI
         self.camera_gui.use()
+
 
         # Draw the GUI
         # visible = 0
