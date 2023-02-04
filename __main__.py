@@ -23,11 +23,11 @@ CAMERA_SPEED = 0.1
 PLAYER_SPEED = 0.01
 PLAYER_GRAVITY = COIN_GRAVITY = 10
 COIN_SPEED = 0.1
-PLANET_COUNT = 10
+PLANET_COUNT = 8
 PLANET_SCALE = 100
 PLANET_SPEED = 0.002
 PLANET_DENSITY = 1000
-G=1e-8
+G = 1e-8
 
 
 class MassSprite(arcade.Sprite):
@@ -85,7 +85,6 @@ class MassSpriteCircle(arcade.SpriteCircle):
 
     def get_orbital_velocity(self, distance: float):
         return (G * self.mass / distance) ** 0.5
-
 
 
 class Planet(MassSpriteCircle):
@@ -193,7 +192,7 @@ class GameView(arcade.View):
         sun.center_y = map_center[1]
         self.planet_list.append(sun)
         map_diagonal = Vec2(MAP_WIDTH, MAP_HEIGHT).mag
-        planet_spacing = 400    #map_diagonal/2/PLANET_COUNT
+        planet_spacing = map_diagonal/2/PLANET_COUNT
         for i in range(PLANET_COUNT):
             distance = planet_spacing*(i+1)+random.uniform(0,PLANET_SCALE)
             angle = random.uniform(0,360)
@@ -210,7 +209,6 @@ class GameView(arcade.View):
             planet.center_x = x
             planet.center_y = y
             self.planet_list.append(planet)
-            print(x,y,planet.speed_vector)
         self.physics_engine = arcade.PhysicsEngineSimple(self.player_sprite, self.planet_list)
         self.list_physics_engines = [arcade.PhysicsEngineSimple(planet, self.planet_list) for planet in self.planet_list]
         # self.list_physics_engines += [arcade.PhysicsEngineSimple(coin, self.planet_list) for coin in self.coin_list]
